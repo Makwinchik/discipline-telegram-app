@@ -43,17 +43,55 @@ button {
 
 <div class="card">
   <p>Чтение 20 минут</p>
-  <button onclick="completeTask()">Выполнено</button>
+  <button onclick="completeTask()">Выполнить</button>
 </div>
 
 <script>
 let tg = window.Telegram.WebApp;
 tg.expand();
 
-function completeTask() {
-  alert("Задача выполнена! XP +10");
+let today = new Date().toDateString();
+
+let savedDay = localStorage.getItem("day");
+let xp = Number(localStorage.getItem("xp")) || 0;
+let done = localStorage.getItem("done") === "true";
+
+if(savedDay !== today){
+  done = false;
+  localStorage.setItem("done", "false");
+  localStorage.setItem("day", today);
+}
+
+updateUI();
+
+function completeTask(){
+  if(done) return;
+
+  done = true;
+  xp += 10;
+
+  localStorage.setItem("xp", xp);
+  localStorage.setItem("done", "true");
+
+  updateUI();
+}
+
+function updateUI(){
+  document.querySelector("button").innerText = done ? "Выполнено ✔" : "Выполнить";
+  document.querySelector("button").disabled = done;
+
+  let xpText = document.getElementById("xp");
+  if(!xpText){
+    xpText = document.createElement("p");
+    xpText.id = "xp";
+    document.body.appendChild(xpText);
+  }
+
+  xpText.innerText = "XP: " + xp;
 }
 </script>
 
+
 </body>
 </html>
+
