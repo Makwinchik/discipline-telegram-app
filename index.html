@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Discipline App</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #111;
+  color: white;
+  text-align: center;
+}
+
+h1 {
+  margin-top: 20px;
+}
+
+.card {
+  background: #1c1c1c;
+  margin: 15px;
+  padding: 20px;
+  border-radius: 12px;
+}
+
+button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background: #00ff9d;
+  color: black;
+  font-size: 16px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>Сегодня</h1>
+
+<div class="card">
+  <p>Чтение 20 минут</p>
+  <button onclick="completeTask()">Выполнено</button>
+</div>
+
+<script>
+let tg = window.Telegram.WebApp;
+tg.expand();
+
+function completeTask() {
+  alert("Задача выполнена! XP +10");
+}
+</script>
+
+</body>
+</html>
