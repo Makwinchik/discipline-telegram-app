@@ -77,7 +77,7 @@ function completeTask(){
 }
 
 function updateUI(){
- document.querySelector("button").innerText = done ? "Сделано ✔" : "Сделать";
+  document.querySelector("button").innerText = done ? "Сделано ✔" : "Сделать";
   document.querySelector("button").disabled = done;
 
   let xpText = document.getElementById("xp");
@@ -87,13 +87,16 @@ function updateUI(){
     document.body.appendChild(xpText);
   }
 
-  xpText.innerText = "XP: " + xp;
+  let level = Math.floor(xp / 100) + 1;
+
+  xpText.innerText = "XP: " + xp + " | Уровень: " + level;
 }
 </script>
 
 
 </body>
 </html>
+
 
 
 
