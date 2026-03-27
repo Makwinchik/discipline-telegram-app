@@ -54,6 +54,7 @@ let today = "test";
 
 let savedDay = localStorage.getItem("day");
 let xp = Number(localStorage.getItem("xp")) || 0;
+let lastLevel = Number(localStorage.getItem("level")) || 1;
 let done = localStorage.getItem("done") === "true";
 
 if(savedDay !== today){
@@ -77,6 +78,15 @@ function completeTask(){
 }
 
 function updateUI(){
+ function updateUI(){
+  let level = Math.floor(xp / 100) + 1;
+
+  if(level > lastLevel){
+    alert("🎉 Новый уровень: " + level);
+    lastLevel = level;
+    localStorage.setItem("level", level);
+  }
+
   document.querySelector("button").innerText = done ? "Сделано ✔" : "Сделать";
   document.querySelector("button").disabled = done;
 
@@ -86,6 +96,9 @@ function updateUI(){
     xpText.id = "xp";
     document.body.appendChild(xpText);
   }
+
+  xpText.innerText = "XP: " + xp + " | Уровень: " + level;
+}
 
   let level = Math.floor(xp / 100) + 1;
 
