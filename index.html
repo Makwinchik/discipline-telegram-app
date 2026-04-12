@@ -59,7 +59,8 @@ let xp = Number(localStorage.getItem("xp")) || 0;
   let streak = Number(localStorage.getItem("streak")) || 0;
 let lastDay = localStorage.getItem("lastDay");
 
-let day = "test2";
+let today = new Date().toDateString();
+  
 let savedDay = localStorage.getItem("day");
 
     if(savedDay !== today){
