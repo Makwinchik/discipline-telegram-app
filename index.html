@@ -1,1 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Discipline App</title>
 
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #111;
+  color: white;
+  text-align: center;
+}
+
+input {
+  padding: 10px;
+  margin-top: 20px;
+  width: 70%;
+}
+
+button {
+  padding: 10px;
+  margin: 5px;
+  border: none;
+  border-radius: 8px;
+}
+
+.card {
+  background: #1c1c1c;
+  margin: 10px;
+  padding: 15px;
+  border-radius: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Мои задачи</h2>
+
+<input id="taskInput" placeholder="Введите задачу">
+<br>
+<button onclick="addTask()">Добавить</button>
+
+<div id="tasks"></div>
+
+<p id="xp">XP: 0</p>
+
+<script>
+let tg = window.Telegram.WebApp;
+tg.expand();
+
+// Данные
+let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
+let xp = Number(localStorage.getItem("xp")) || 0;
+let streak = Number(localStorage.getItem("streak")) || 0;
+let lastDay = localStorage.getItem("lastDay");
+
+let rewards = JSON.parse(localStorage.getItem("rewards")) || [
+  {title: "Кофе", cost: 50},
+  {title: "Фильм", cost: 100}
+];
+
+// День
+let today = new Date().toDateString();
+let savedDay = localStorage.getItem("day");
+
+// Сброс дня
+if(savedDay !== today){
+  tasks = tasks.filter(task => task.daily === true);
+
+  tasks.forEach(task => {
+    task.done = false;
+  });
+
+  localStorage.setItem("day", today);
+  localStorage.setItem("tasks", JSON.stringify(tasks));
+}
+
+// Сохранение
+function save(){
+  localStorage.setItem("tasks", JSON.stringify(tasks));
+  localStorage.setItem("xp", xp);
+}
+
+// Добавить задачу
+function addTask(){
+  let input = document.getElementById("taskInput");
+
+  if(!input.value) return;
+
+  tasks.push({
+    title: input.value,
+    done: false,
+    daily: false
+  });
+
+  input.value = "";
+  save();
+  render();
+}
+
+// Выполнение задачи
+function toggleDone(index){
+
+  let today = new Date().toDateString();
+
+  if(lastDay !== today){
+    if(lastDay){
+      let yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      if(lastDay === yesterday.toDateString()){
+        streak++;
+      } else {
+        streak = 1;
+      }
+    } else {
+      streak = 1;
+    }
+
+    lastDay = today;
+
+    localStorage.setItem("streak", streak);
+    localStorage.setItem("lastDay", lastDay);
+  }
+
+  if(tasks[index].done) return;
+
+  tasks[index].done = true;
+  xp += 10;
+
+  save();
+  render();
+}
+
+// Закрепить задачу
+function toggleDaily(index){
+  tasks[index].daily = !tasks[index].daily;
+  save();
+  render();
+}
+
+// Удалить задачу
+function deleteTask(index){
+  tasks.splice(index, 1);
+  save();
+  render();
+}
+
+// Купить награду
+function buyReward(index){
+  if(xp < rewards[index].cost){
+    alert("Недостаточно XP");
+    return;
+  }
+
+  xp -= rewards[index].cost;
+  localStorage.setItem("xp", xp);
+
+  alert("Куплено: " + rewards[index].title);
+
+  render();
+}
+
+// Отрисовка
+function render(){
+  let container = document.getElementById("tasks");
+  container.innerHTML = "";
+
+  tasks.forEach((task, i) => {
+    let div = document.createElement("div");
+    div.className = "card";
+
+    div.innerHTML = `
+      <p>${task.title}</p>
+      <button onclick="toggleDone(${i})">${task.done ? "✔" : "Сделать"}</button>
+      <button onclick="toggleDaily(${i})">${task.daily ? "★" : "☆"}</button>
+      <button onclick="deleteTask(${i})">❌</button>
+    `;
+
+    container.appendChild(div);
+  });
+
+  document.getElementById("xp").innerText =
+    "XP: " + xp + " | 🔥 " + streak;
+
+  // Магазин
+  let shop = document.getElementById("shop");
+
+  if(!shop){
+    shop = document.createElement("div");
+    shop.id = "shop";
+    document.body.appendChild(shop);
+  }
+
+  shop.innerHTML = "<h3>Магазин</h3>";
+
+  rewards.forEach((r, i) => {
+    shop.innerHTML += `
+      <div class="card">
+        <p>${r.title} - ${r.cost} XP</p>
+        <button onclick="buyReward(${i})">Купить</button>
+      </div>
+    `;
+  });
+}
+
+render();
+</script>
+
+</body>
+</html>
