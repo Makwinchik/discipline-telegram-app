@@ -141,6 +141,39 @@ function deleteTask(index){
   render();
 }
 
+  function buyReward(index){
+  if(xp < rewards[index].cost){
+    alert("Недостаточно XP");
+    return;
+  }
+
+  xp -= rewards[index].cost;
+
+  localStorage.setItem("xp", xp);
+
+  alert("Куплено: " + rewards[index].title);
+
+  render();
+    let shop = document.getElementById("shop");
+
+if(!shop){
+  shop = document.createElement("div");
+  shop.id = "shop";
+  document.body.appendChild(shop);
+}
+
+shop.innerHTML = "<h3>Магазин</h3>";
+
+rewards.forEach((r, i) => {
+  shop.innerHTML += `
+    <div class="card">
+      <p>${r.title} - ${r.cost} XP</p>
+      <button onclick="buyReward(${i})">Купить</button>
+    </div>
+  `;
+});
+}
+
 function render(){
   let container = document.getElementById("tasks");
   container.innerHTML = "";
