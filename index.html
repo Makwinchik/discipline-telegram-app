@@ -56,6 +56,10 @@ tg.expand();
 let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
 let xp = Number(localStorage.getItem("xp")) || 0;
 
+  let today = new Date().toDateString();
+let savedDay = localStorage.getItem("day");
+
+
 function save(){
   localStorage.setItem("tasks", JSON.stringify(tasks));
   localStorage.setItem("xp", xp);
