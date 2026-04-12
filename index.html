@@ -54,12 +54,12 @@ let tg = window.Telegram.WebApp;
 tg.expand();
 
 let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
-let xp = Number(localStorage.getItem("xp")) || 0;
-
-  let rewards = JSON.parse(localStorage.getItem("rewards")) || [
+let xp = Number(localStorage.getItem("xp")) || 0;  
+let rewards = JSON.parse(localStorage.getItem("rewards")) || [
   {title: "Кофе", cost: 50},
   {title: "Фильм", cost: 100}
 ];
+
 
   let streak = Number(localStorage.getItem("streak")) || 0;
 let lastDay = localStorage.getItem("lastDay");
