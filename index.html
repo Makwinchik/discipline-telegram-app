@@ -93,7 +93,27 @@ function addTask(){
   render();
 }
 
-function toggleDone(index){
+function toggleDone(index){let today = new Date().toDateString();
+
+if(lastDay !== today){
+  if(lastDay){
+    let yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if(lastDay === yesterday.toDateString()){
+      streak++;
+    } else {
+      streak = 1;
+    }
+  } else {
+    streak = 1;
+  }
+
+  lastDay = today;
+
+  localStorage.setItem("streak", streak);
+  localStorage.setItem("lastDay", lastDay);
+}
   if(tasks[index].done) return;
 
   tasks[index].done = true;
