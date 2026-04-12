@@ -54,6 +54,8 @@ button {
   <div id="tasks"></div>
 </div>
 
+  <div id="shopTab" style="display:none;"></div>
+
 <p id="xp">XP: 0</p>
 
 <script>
@@ -216,6 +218,19 @@ document.getElementById("shopTab").appendChild(shop);
   });
 }
 
+  function showTab(tab){
+  document.getElementById("tasksTab").style.display = "none";
+  document.getElementById("shopTab").style.display = "none";
+
+  if(tab === "tasks"){
+    document.getElementById("tasksTab").style.display = "block";
+  }
+
+  if(tab === "shop"){
+    document.getElementById("shopTab").style.display = "block";
+  }
+}
+  
 render();
 </script>
 
