@@ -46,9 +46,19 @@ button {
   <button onclick="showTab('shop')">Магазин</button>
 </div>
 
-<input id="taskInput" placeholder="Введите задачу">
-<br>
-<button onclick="addTask()">Добавить</button>
+<div id="taskControls">
+  <input id="taskInput" placeholder="Введите задачу">
+  <br>
+  <button onclick="addTask()">Добавить задачу</button>
+</div>
+
+  <div id="rewardControls" style="display:none;">
+  <input id="rewardTitle" placeholder="Название награды">
+  <br>
+  <input id="rewardCost" placeholder="Цена XP">
+  <br>
+  <button onclick="addReward()">Добавить награду</button>
+</div>
 
 <div id="tasksTab">
   <div id="tasks"></div>
@@ -109,6 +119,22 @@ function addTask(){
 
   input.value = "";
   save();
+  render();
+}
+
+  function addReward(){
+  let title = document.getElementById("rewardTitle").value;
+  let cost = Number(document.getElementById("rewardCost").value);
+
+  if(!title || !cost) return;
+
+  rewards.push({title, cost});
+
+  localStorage.setItem("rewards", JSON.stringify(rewards));
+
+  document.getElementById("rewardTitle").value = "";
+  document.getElementById("rewardCost").value = "";
+
   render();
 }
 
@@ -218,16 +244,21 @@ document.getElementById("shopTab").appendChild(shop);
   });
 }
 
-  function showTab(tab){
+ function showTab(tab){
   document.getElementById("tasksTab").style.display = "none";
   document.getElementById("shopTab").style.display = "none";
 
+  document.getElementById("taskControls").style.display = "none";
+  document.getElementById("rewardControls").style.display = "none";
+
   if(tab === "tasks"){
     document.getElementById("tasksTab").style.display = "block";
+    document.getElementById("taskControls").style.display = "block";
   }
 
   if(tab === "shop"){
     document.getElementById("shopTab").style.display = "block";
+    document.getElementById("rewardControls").style.display = "block";
   }
 }
   
