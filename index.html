@@ -60,7 +60,7 @@ let today = "test2";
 let savedDay = localStorage.getItem("day");
 
     if(savedDay !== today){
-  tasks = tasks.filter(task => task.daily);
+tasks = tasks.filter(task => task.daily === true);
 
   tasks.forEach(task => {
     task.done = false;
