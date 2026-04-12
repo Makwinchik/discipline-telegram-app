@@ -59,6 +59,16 @@ let xp = Number(localStorage.getItem("xp")) || 0;
   let today = new Date().toDateString();
 let savedDay = localStorage.getItem("day");
 
+    if(savedDay !== today){
+  tasks = tasks.filter(task => task.daily);
+
+  tasks.forEach(task => {
+    task.done = false;
+  });
+
+  localStorage.setItem("day", today);
+  localStorage.setItem("tasks", JSON.stringify(tasks));
+}
 
 function save(){
   localStorage.setItem("tasks", JSON.stringify(tasks));
