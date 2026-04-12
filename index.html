@@ -48,6 +48,9 @@ button {
 <div id="tasks"></div>
 
 <p id="xp">XP: 0</p>
+  
+  let streak = Number(localStorage.getItem("streak")) || 0;
+let lastDoneDay = localStorage.getItem("lastDoneDay");
 
 <script>
 let tg = window.Telegram.WebApp;
@@ -95,6 +98,23 @@ function toggleDone(index){
 
   tasks[index].done = true;
   xp += 10;
+  let today = new Date().toDateString();
+
+if(lastDoneDay !== today){
+  let yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if(lastDoneDay === yesterday.toDateString()){
+    streak += 1;
+  } else {
+    streak = 1;
+  }
+
+  lastDoneDay = today;
+
+  localStorage.setItem("streak", streak);
+  localStorage.setItem("lastDoneDay", today);
+}
 
   save();
   render();
@@ -130,9 +150,8 @@ function render(){
     container.appendChild(div);
   });
 
-  document.getElementById("xp").innerText = "XP: " + xp;
-}
-
+document.getElementById("xp").innerText =
+  "XP: " + xp + " | 🔥 Серия: " + streak;
 render();
 </script>
 
