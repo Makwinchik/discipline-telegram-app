@@ -1,0 +1,2 @@
+const tools = ['Trim','Split','Resize captions','Change font','Change color','Move captions','Add emoji','Add logo','Blur','Crop','Volume'];
+export default function Editor() { return <div className="space-y-6"><h1 className="text-3xl font-bold">Manual Editor</h1><div className="glass aspect-video rounded-3xl p-6 grid place-items-center text-white/50">Timeline preview</div><div className="grid gap-3 md:grid-cols-4">{tools.map((tool)=><button key={tool} className="glass rounded-2xl p-4 text-left">{tool}</button>)}</div></div>; }
