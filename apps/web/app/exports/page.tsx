@@ -1,0 +1,1 @@
+export default function Page() { return <div className="space-y-4"><h1 className="text-3xl font-bold">Exports</h1><div className="glass rounded-3xl p-6 text-white/70">Production exports workspace for ClipForge AI.</div></div>; }
