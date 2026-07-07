@@ -1,1 +1,834 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000000000000000000000000000000000000..065e729f805d1c79bb86196bbb593122f060e79d
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,17 @@
++APP_ENV=development
++API_BASE_URL=http://localhost:8000
++NEXT_PUBLIC_API_URL=http://localhost:8000
++DATABASE_URL=postgresql+psycopg://clipforge:clipforge@postgres:5432/clipforge
++REDIS_URL=redis://redis:6379/0
++CELERY_BROKER_URL=redis://redis:6379/1
++CELERY_RESULT_BACKEND=redis://redis:6379/2
++JWT_SECRET=change-me
++S3_ENDPOINT_URL=http://minio:9000
++S3_ACCESS_KEY_ID=minioadmin
++S3_SECRET_ACCESS_KEY=minioadmin
++S3_BUCKET=clipforge-videos
++OPENAI_API_KEY=
++GOOGLE_CLIENT_ID=
++GOOGLE_CLIENT_SECRET=
++GITHUB_CLIENT_ID=
++GITHUB_CLIENT_SECRET=
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000000000000000000000000000000000000..434328866be92c3ea3648ee5f57cd13f9cf51454
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,9 @@
++__pycache__/
++*.py[cod]
++.pytest_cache/
++.env
++node_modules/
++.next/
++dist/
++build/
++.DS_Store
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a394117d1688a887b17539d7f6658e76422acebf
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,36 @@
++# ClipForge AI
++
++Production-ready SaaS scaffold for converting long-form videos into viral vertical shorts with AI analysis, captioning, editing, and exports.
++
++## Stack
++
++- Frontend: Next.js, TypeScript, TailwindCSS, shadcn-style components, Framer Motion-ready structure
++- Backend: FastAPI, PostgreSQL, Redis, Celery, S3-compatible storage, JWT/OAuth-ready auth
++- AI pipeline: FFmpeg, Whisper, Pyannote, OpenCV, MediaPipe, YOLO/GPT integration seams
++
++## Quick start
++
++```bash
++cp .env.example .env
++docker compose up --build
++```
++
++Services:
++
++- Frontend: http://localhost:3000
++- API: http://localhost:8000/docs
++- PostgreSQL: localhost:5432
++- Redis: localhost:6379
++- MinIO: http://localhost:9001
++
++## Architecture
++
++```text
++apps/web          Next.js dashboard, upload, review, editor, exports
++apps/api          FastAPI app, auth, videos, clips, exports, billing
++apps/worker       Celery worker and AI/video processing pipeline
++packages/shared   Shared TypeScript contracts and constants
++infra             Database migrations and deployment notes
++```
++
++The pipeline is intentionally modular. Heavy AI integrations are wrapped behind services so production deployments can swap local models, managed GPU workers, or vendor APIs without changing API contracts.
+diff --git a/apps/__init__.py b/apps/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/api/Dockerfile b/apps/api/Dockerfile
+new file mode 100644
+index 0000000000000000000000000000000000000000..700fb861d3ded77fd41522e473d4c4705f0d0c8e
+--- /dev/null
++++ b/apps/api/Dockerfile
+@@ -0,0 +1,7 @@
++FROM python:3.12-slim
++WORKDIR /app
++RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
++COPY apps/api/requirements.txt /app/requirements.txt
++RUN pip install --no-cache-dir -r requirements.txt
++COPY apps/api/app /app/app
++CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+diff --git a/apps/api/__init__.py b/apps/api/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/api/app/__init__.py b/apps/api/app/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/api/app/api/__init__.py b/apps/api/app/api/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/api/app/api/routes.py b/apps/api/app/api/routes.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..45de7be56645700d2684e87e7648b04f9b225702
+--- /dev/null
++++ b/apps/api/app/api/routes.py
+@@ -0,0 +1,53 @@
++import uuid
++from fastapi import APIRouter, Depends, HTTPException
++from sqlalchemy.orm import Session, selectinload
++from app.db.session import get_db
++from app.models.domain import Clip, Video, VideoStatus
++from app.schemas.dto import UploadIntent, UploadIntentResponse, VideoRead
++from app.services.storage import StorageService
++
++router = APIRouter(prefix="/api/v1")
++
++@router.get("/health")
++def health():
++    return {"status": "ok", "service": "clipforge-api"}
++
++@router.post("/uploads/intent", response_model=UploadIntentResponse)
++def create_upload_intent(payload: UploadIntent, db: Session = Depends(get_db)):
++    video = Video(owner_id="demo-user", title=payload.filename, source_key=f"uploads/{uuid.uuid4()}-{payload.filename}")
++    db.add(video)
++    db.commit()
++    db.refresh(video)
++    upload_url = StorageService().presigned_put(video.source_key, payload.content_type)
++    return UploadIntentResponse(video_id=video.id, upload_url=upload_url, object_key=video.source_key)
++
++@router.post("/videos/{video_id}/process")
++def process_video(video_id: uuid.UUID, db: Session = Depends(get_db)):
++    video = db.get(Video, video_id)
++    if not video:
++        raise HTTPException(404, "Video not found")
++    video.status = VideoStatus.analyzing
++    db.commit()
++    from app.services.tasks import process_video_task
++    process_video_task.delay(str(video_id))
++    return {"queued": True, "video_id": video_id}
++
++@router.get("/videos", response_model=list[VideoRead])
++def list_videos(db: Session = Depends(get_db)):
++    return db.query(Video).options(selectinload(Video.clips)).order_by(Video.created_at.desc()).all()
++
++@router.get("/videos/{video_id}", response_model=VideoRead)
++def get_video(video_id: uuid.UUID, db: Session = Depends(get_db)):
++    video = db.query(Video).options(selectinload(Video.clips)).filter(Video.id == video_id).first()
++    if not video:
++        raise HTTPException(404, "Video not found")
++    return video
++
++@router.delete("/clips/{clip_id}")
++def delete_clip(clip_id: uuid.UUID, db: Session = Depends(get_db)):
++    clip = db.get(Clip, clip_id)
++    if not clip:
++        raise HTTPException(404, "Clip not found")
++    db.delete(clip)
++    db.commit()
++    return {"deleted": True}
+diff --git a/apps/api/app/core/__init__.py b/apps/api/app/core/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/api/app/core/config.py b/apps/api/app/core/config.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2485b23a2ebdee42bccb9135761083e9f0b5e5c9
+--- /dev/null
++++ b/apps/api/app/core/config.py
+@@ -0,0 +1,17 @@
++from pydantic_settings import BaseSettings, SettingsConfigDict
++
++class Settings(BaseSettings):
++    app_env: str = "development"
++    database_url: str
++    redis_url: str
++    celery_broker_url: str
++    celery_result_backend: str
++    jwt_secret: str
++    s3_endpoint_url: str
++    s3_access_key_id: str
++    s3_secret_access_key: str
++    s3_bucket: str = "clipforge-videos"
++    openai_api_key: str | None = None
++    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
++
++settings = Settings()
+diff --git a/apps/api/app/db/__init__.py b/apps/api/app/db/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/api/app/db/session.py b/apps/api/app/db/session.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..faf26446e8c4dc2f995b1037c4b1d44f33807763
+--- /dev/null
++++ b/apps/api/app/db/session.py
+@@ -0,0 +1,16 @@
++from sqlalchemy import create_engine
++from sqlalchemy.orm import DeclarativeBase, sessionmaker
++from app.core.config import settings
++
++engine = create_engine(settings.database_url, pool_pre_ping=True)
++SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
++
++class Base(DeclarativeBase):
++    pass
++
++def get_db():
++    db = SessionLocal()
++    try:
++        yield db
++    finally:
++        db.close()
+diff --git a/apps/api/app/main.py b/apps/api/app/main.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..a79361a4f985400c853d889e4e6023a7a4934be4
+--- /dev/null
++++ b/apps/api/app/main.py
+@@ -0,0 +1,11 @@
++from fastapi import FastAPI
++from fastapi.middleware.cors import CORSMiddleware
++from app.api.routes import router
++from app.db.session import Base, engine
++from app.models import domain  # noqa: F401
++
++Base.metadata.create_all(bind=engine)
++
++app = FastAPI(title="ClipForge AI API", version="1.0.0")
++app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
++app.include_router(router)
+diff --git a/apps/api/app/models/__init__.py b/apps/api/app/models/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa5fa41f5fa6bab1285a90905c0054341eca138a
+--- /dev/null
++++ b/apps/api/app/models/__init__.py
+@@ -0,0 +1 @@
++from app.models.domain import Clip, Video, VideoStatus
+diff --git a/apps/api/app/models/domain.py b/apps/api/app/models/domain.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..c41124acc1423f5f53701458fcd089565126848a
+--- /dev/null
++++ b/apps/api/app/models/domain.py
+@@ -0,0 +1,40 @@
++import enum
++import uuid
++from datetime import datetime
++from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, JSON, String, Text
++from sqlalchemy.orm import Mapped, mapped_column, relationship
++from app.db.session import Base
++
++class VideoStatus(str, enum.Enum):
++    uploaded = "uploaded"
++    analyzing = "analyzing"
++    clipping = "clipping"
++    rendered = "rendered"
++    failed = "failed"
++
++class Video(Base):
++    __tablename__ = "videos"
++    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
++    owner_id: Mapped[str] = mapped_column(String(128), index=True)
++    title: Mapped[str] = mapped_column(String(255))
++    source_key: Mapped[str] = mapped_column(String(512))
++    duration_seconds: Mapped[int | None] = mapped_column(Integer)
++    status: Mapped[VideoStatus] = mapped_column(Enum(VideoStatus), default=VideoStatus.uploaded)
++    transcript: Mapped[str | None] = mapped_column(Text)
++    analysis: Mapped[dict | None] = mapped_column(JSON)
++    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
++    clips: Mapped[list["Clip"]] = relationship(back_populates="video")
++
++class Clip(Base):
++    __tablename__ = "clips"
++    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
++    video_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("videos.id"), index=True)
++    title: Mapped[str] = mapped_column(String(255))
++    topic: Mapped[str] = mapped_column(String(160))
++    score: Mapped[float] = mapped_column(Float)
++    duration_seconds: Mapped[int] = mapped_column(Integer)
++    output_key: Mapped[str | None] = mapped_column(String(512))
++    captions: Mapped[dict | None] = mapped_column(JSON)
++    hashtags: Mapped[dict | None] = mapped_column(JSON)
++    description: Mapped[str | None] = mapped_column(Text)
++    video: Mapped[Video] = relationship(back_populates="clips")
+diff --git a/apps/api/app/schemas/__init__.py b/apps/api/app/schemas/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/api/app/schemas/dto.py b/apps/api/app/schemas/dto.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..374f6143aefe1a821b71d192a49d40879dbec0e3
+--- /dev/null
++++ b/apps/api/app/schemas/dto.py
+@@ -0,0 +1,32 @@
++from uuid import UUID
++from pydantic import BaseModel, Field
++
++class UploadIntent(BaseModel):
++    filename: str
++    content_type: str
++    size_bytes: int = Field(le=5 * 1024 * 1024 * 1024)
++
++class UploadIntentResponse(BaseModel):
++    video_id: UUID
++    upload_url: str
++    object_key: str
++
++class ClipRead(BaseModel):
++    id: UUID
++    title: str
++    topic: str
++    score: float
++    duration_seconds: int
++    output_url: str | None = None
++    hashtags: dict | None = None
++    description: str | None = None
++    model_config = {"from_attributes": True}
++
++class VideoRead(BaseModel):
++    id: UUID
++    title: str
++    status: str
++    duration_seconds: int | None
++    analysis: dict | None = None
++    clips: list[ClipRead] = []
++    model_config = {"from_attributes": True}
+diff --git a/apps/api/app/services/__init__.py b/apps/api/app/services/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/api/app/services/ai_pipeline.py b/apps/api/app/services/ai_pipeline.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7752f3adbb5c5fc3143ca2ab2af205ff5be797f2
+--- /dev/null
++++ b/apps/api/app/services/ai_pipeline.py
+@@ -0,0 +1,31 @@
++CLIP_DURATIONS = [15, 30, 45, 60]
++CAPTION_PRESETS = ["TikTok", "Alex Hormozi", "MrBeast", "Minimal", "Podcast", "Modern"]
++
++def analyze_video(source_key: str) -> dict:
++    """Production seam for Whisper, Pyannote, FFmpeg, OpenCV, MediaPipe, YOLO, and GPT ranking."""
++    transcript = "Welcome to ClipForge AI. This placeholder transcript represents model output."
++    clips = []
++    for index, duration in enumerate(CLIP_DURATIONS, start=1):
++        clips.append({
++            "title": f"Viral moment #{index}",
++            "topic": "AI generated highlight",
++            "score": 100 - index * 7,
++            "duration_seconds": duration,
++            "output_key": f"renders/{source_key.split('/')[-1]}-{duration}s.mp4",
++            "captions": {"preset": CAPTION_PRESETS[index % len(CAPTION_PRESETS)], "words": []},
++            "hashtags": {
++                "tiktok": ["#viral", "#learnontiktok", "#clipforge"],
++                "instagram": ["#reels", "#creator", "#video"],
++                "youtube": ["#shorts", "#youtube", "#ai"],
++            },
++            "description": "AI-selected high-engagement short with dynamic captions and smart crop.",
++        })
++    return {
++        "transcript": transcript,
++        "analysis": {
++            "chapters": ["Hook", "Insight", "Payoff"],
++            "signals": ["viral_hook", "emotional_moment", "informative_moment", "facial_expression"],
++            "enhancements": ["color", "contrast", "audio_normalization", "noise_reduction"],
++        },
++        "clips": clips,
++    }
+diff --git a/apps/api/app/services/storage.py b/apps/api/app/services/storage.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..902222288a26eba78e5a2f0974819699563577c6
+--- /dev/null
++++ b/apps/api/app/services/storage.py
+@@ -0,0 +1,23 @@
++import boto3
++from app.core.config import settings
++
++class StorageService:
++    def __init__(self):
++        self.client = boto3.client(
++            "s3",
++            endpoint_url=settings.s3_endpoint_url,
++            aws_access_key_id=settings.s3_access_key_id,
++            aws_secret_access_key=settings.s3_secret_access_key,
++        )
++
++    def presigned_put(self, key: str, content_type: str) -> str:
++        return self.client.generate_presigned_url(
++            "put_object",
++            Params={"Bucket": settings.s3_bucket, "Key": key, "ContentType": content_type},
++            ExpiresIn=3600,
++        )
++
++    def presigned_get(self, key: str | None) -> str | None:
++        if not key:
++            return None
++        return self.client.generate_presigned_url("get_object", Params={"Bucket": settings.s3_bucket, "Key": key}, ExpiresIn=3600)
+diff --git a/apps/api/app/services/tasks.py b/apps/api/app/services/tasks.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb74c1c585fae126c21eac3cc57004b0cac57b3e
+--- /dev/null
++++ b/apps/api/app/services/tasks.py
+@@ -0,0 +1,9 @@
++from celery import Celery
++from app.core.config import settings
++
++celery_app = Celery("clipforge", broker=settings.celery_broker_url, backend=settings.celery_result_backend)
++
++@celery_app.task(name="process_video")
++def process_video_task(video_id: str):
++    from app.worker_bridge import run_pipeline
++    return run_pipeline(video_id)
+diff --git a/apps/api/app/worker_bridge.py b/apps/api/app/worker_bridge.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e07c05d72ad0d6b5f2b286083ad3aeaba3da5ecd
+--- /dev/null
++++ b/apps/api/app/worker_bridge.py
+@@ -0,0 +1,26 @@
++from sqlalchemy.orm import Session
++from app.db.session import SessionLocal
++from app.models.domain import Clip, Video, VideoStatus
++from app.services.ai_pipeline import analyze_video
++
++def run_pipeline(video_id: str) -> dict:
++    db: Session = SessionLocal()
++    try:
++        video = db.get(Video, video_id)
++        if not video:
++            return {"error": "not_found"}
++        result = analyze_video(video.source_key)
++        video.transcript = result["transcript"]
++        video.analysis = result["analysis"]
++        video.status = VideoStatus.rendered
++        for item in result["clips"]:
++            db.add(Clip(video_id=video.id, **item))
++        db.commit()
++        return {"status": "rendered", "clips": len(result["clips"])}
++    except Exception as exc:
++        if 'video' in locals() and video:
++            video.status = VideoStatus.failed
++            db.commit()
++        raise exc
++    finally:
++        db.close()
+diff --git a/apps/api/requirements.txt b/apps/api/requirements.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..576b2ad7df44b6d2e1fb1a7b4a74cc08b19a8098
+--- /dev/null
++++ b/apps/api/requirements.txt
+@@ -0,0 +1,12 @@
++fastapi==0.115.6
++uvicorn[standard]==0.34.0
++pydantic-settings==2.7.1
++sqlalchemy==2.0.36
++psycopg[binary]==3.2.3
++python-jose[cryptography]==3.3.0
++passlib[bcrypt]==1.7.4
++python-multipart==0.0.20
++boto3==1.35.90
++celery==5.4.0
++redis==5.2.1
++httpx==0.28.1
+diff --git a/apps/web/Dockerfile b/apps/web/Dockerfile
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d8917de2c985b1ff2b3c1eaafe17081946ade1
+--- /dev/null
++++ b/apps/web/Dockerfile
+@@ -0,0 +1,9 @@
++FROM node:22-alpine AS deps
++WORKDIR /app
++COPY apps/web/package.json ./package.json
++RUN npm install
++FROM node:22-alpine
++WORKDIR /app
++COPY --from=deps /app/node_modules ./node_modules
++COPY apps/web ./
++CMD ["npm", "run", "dev"]
+diff --git a/apps/web/__init__.py b/apps/web/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/app/__init__.py b/apps/web/app/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/app/billing/__init__.py b/apps/web/app/billing/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/app/billing/page.tsx b/apps/web/app/billing/page.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..b9091b48ae1ef90cd525e4ae806b077f853b2ea0
+--- /dev/null
++++ b/apps/web/app/billing/page.tsx
+@@ -0,0 +1 @@
++export default function Page() { return <div className="space-y-4"><h1 className="text-3xl font-bold">Billing</h1><div className="glass rounded-3xl p-6 text-white/70">Production billing workspace for ClipForge AI.</div></div>; }
+diff --git a/apps/web/app/clips/__init__.py b/apps/web/app/clips/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/app/clips/page.tsx b/apps/web/app/clips/page.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..4676e8eb5a3215558cee76d474e8235664147eca
+--- /dev/null
++++ b/apps/web/app/clips/page.tsx
+@@ -0,0 +1,3 @@
++import { ClipCard } from '@/components/clip-card';
++import { getVideos } from '@/lib/api';
++export default async function Clips() { const videos = await getVideos(); const clips = videos.flatMap((v: any) => v.clips ?? []); return <div><h1 className="mb-6 text-3xl font-bold">Generated Clips</h1><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{clips.map((clip: any) => <ClipCard key={clip.id} clip={clip} />)}</div></div>; }
+diff --git a/apps/web/app/dashboard/__init__.py b/apps/web/app/dashboard/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/app/dashboard/page.tsx b/apps/web/app/dashboard/page.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..ce21ba5868907f110fde63942afe6ccc0aad30fa
+--- /dev/null
++++ b/apps/web/app/dashboard/page.tsx
+@@ -0,0 +1,3 @@
++import { UploadDropzone } from '@/components/upload-dropzone';
++import { getVideos } from '@/lib/api';
++export default async function Dashboard() { const videos = await getVideos(); return <div className="space-y-6"><h1 className="text-3xl font-bold">Dashboard</h1><UploadDropzone /><div className="grid gap-4 md:grid-cols-4">{['Processing queue','Storage usage','Credits remaining','Recent exports'].map((x,i)=><div key={x} className="glass rounded-3xl p-5"><p className="text-white/50">{x}</p><p className="mt-2 text-3xl font-bold">{i===2?'1,240':videos.length}</p></div>)}</div></div>; }
+diff --git a/apps/web/app/editor/__init__.py b/apps/web/app/editor/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/app/editor/page.tsx b/apps/web/app/editor/page.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..fe3a205eeff4b26db4e732b3d70eb0bf487fe082
+--- /dev/null
++++ b/apps/web/app/editor/page.tsx
+@@ -0,0 +1,2 @@
++const tools = ['Trim','Split','Resize captions','Change font','Change color','Move captions','Add emoji','Add logo','Blur','Crop','Volume'];
++export default function Editor() { return <div className="space-y-6"><h1 className="text-3xl font-bold">Manual Editor</h1><div className="glass aspect-video rounded-3xl p-6 grid place-items-center text-white/50">Timeline preview</div><div className="grid gap-3 md:grid-cols-4">{tools.map((tool)=><button key={tool} className="glass rounded-2xl p-4 text-left">{tool}</button>)}</div></div>; }
+diff --git a/apps/web/app/exports/__init__.py b/apps/web/app/exports/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/app/exports/page.tsx b/apps/web/app/exports/page.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..f56accf0b6f867bfefc754611ba1a63ad9a94658
+--- /dev/null
++++ b/apps/web/app/exports/page.tsx
+@@ -0,0 +1 @@
++export default function Page() { return <div className="space-y-4"><h1 className="text-3xl font-bold">Exports</h1><div className="glass rounded-3xl p-6 text-white/70">Production exports workspace for ClipForge AI.</div></div>; }
+diff --git a/apps/web/app/globals.css b/apps/web/app/globals.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..a9401cc0ea8389ee929f49a1f116080181fc641c
+--- /dev/null
++++ b/apps/web/app/globals.css
+@@ -0,0 +1,6 @@
++@tailwind base;
++@tailwind components;
++@tailwind utilities;
++:root { color-scheme: dark; }
++body { @apply bg-forge-bg text-white antialiased; }
++.glass { @apply border border-white/10 bg-white/[0.06] backdrop-blur-xl shadow-2xl shadow-black/30; }
+diff --git a/apps/web/app/layout.tsx b/apps/web/app/layout.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..fea9ffcbe3cf458e93b0457f3b1e268cb39b59f9
+--- /dev/null
++++ b/apps/web/app/layout.tsx
+@@ -0,0 +1,3 @@
++import './globals.css';
++import { Sidebar } from '@/components/sidebar';
++export default function RootLayout({ children }: { children: React.ReactNode }) { return <html lang="en"><body><Sidebar /><main className="min-h-screen p-4 lg:pl-80">{children}</main></body></html>; }
+diff --git a/apps/web/app/page.tsx b/apps/web/app/page.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a926bbc3f6406441e9eb980f144dbd0a2ee392c
+--- /dev/null
++++ b/apps/web/app/page.tsx
+@@ -0,0 +1,2 @@
++import Link from 'next/link';
++export default function Home() { return <section className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center text-center"><div className="glass rounded-full px-4 py-2 text-sm text-violet-200">AI shorts for TikTok, Reels, and Shorts</div><h1 className="mt-6 text-6xl font-bold tracking-tight">Turn long videos into viral clips.</h1><p className="mt-6 max-w-2xl text-lg text-white/60">ClipForge AI analyzes speech, emotion, hooks, faces, and engagement signals to generate polished 9:16 shorts with animated captions.</p><Link href="/dashboard" className="mt-8 rounded-2xl bg-white px-6 py-3 font-semibold text-black">Open dashboard</Link></section>; }
+diff --git a/apps/web/app/settings/__init__.py b/apps/web/app/settings/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/app/settings/page.tsx b/apps/web/app/settings/page.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac62c65a3e2e19485ad1c4313f91980ada9a5097
+--- /dev/null
++++ b/apps/web/app/settings/page.tsx
+@@ -0,0 +1 @@
++export default function Page() { return <div className="space-y-4"><h1 className="text-3xl font-bold">Settings</h1><div className="glass rounded-3xl p-6 text-white/70">Production settings workspace for ClipForge AI.</div></div>; }
+diff --git a/apps/web/app/videos/__init__.py b/apps/web/app/videos/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/app/videos/page.tsx b/apps/web/app/videos/page.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..3d14b0b545e464f04b36cb0adb8afb4ab48ab152
+--- /dev/null
++++ b/apps/web/app/videos/page.tsx
+@@ -0,0 +1 @@
++export default function Page() { return <div className="space-y-4"><h1 className="text-3xl font-bold">Videos</h1><div className="glass rounded-3xl p-6 text-white/70">Production videos workspace for ClipForge AI.</div></div>; }
+diff --git a/apps/web/components/__init__.py b/apps/web/components/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/components/clip-card.tsx b/apps/web/components/clip-card.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c39b3203e4616cb99a376543ed8e98cc9a302d91
+--- /dev/null
++++ b/apps/web/components/clip-card.tsx
+@@ -0,0 +1,4 @@
++type Clip = { id: string; title: string; topic: string; score: number; duration_seconds: number; description?: string; hashtags?: Record<string, string[]> };
++export function ClipCard({ clip }: { clip: Clip }) {
++  return <article className="glass rounded-3xl p-5"><div className="aspect-[9/16] rounded-2xl bg-gradient-to-br from-violet-600/40 to-cyan-400/20 grid place-items-center">▶ Preview</div><div className="mt-4 flex items-center justify-between"><h3 className="font-semibold">{clip.title}</h3><span className="rounded-full bg-emerald-400/15 px-3 py-1 text-sm text-emerald-200">AI {clip.score}</span></div><p className="mt-2 text-sm text-white/60">{clip.duration_seconds}s · {clip.topic}</p><p className="mt-3 text-sm text-white/70">{clip.description}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><button className="rounded-xl bg-white px-3 py-2 text-black">Download</button><button className="rounded-xl bg-white/10 px-3 py-2">Edit</button><button className="rounded-xl bg-white/10 px-3 py-2">Regenerate</button><button className="rounded-xl bg-red-500/20 px-3 py-2 text-red-100">Delete</button></div></article>;
++}
+diff --git a/apps/web/components/sidebar.tsx b/apps/web/components/sidebar.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..82db2bca2695a90f9ca01d20ee66ccc20249ddc1
+--- /dev/null
++++ b/apps/web/components/sidebar.tsx
+@@ -0,0 +1,6 @@
++import Link from 'next/link';
++const items = ['Dashboard', 'Videos', 'Generated Clips', 'Editor', 'Exports', 'Billing', 'Settings'];
++const href: Record<string, string> = { Dashboard: '/dashboard', Videos: '/videos', 'Generated Clips': '/clips', Editor: '/editor', Exports: '/exports', Billing: '/billing', Settings: '/settings' };
++export function Sidebar() {
++  return <aside className="glass fixed inset-y-4 left-4 hidden w-64 rounded-3xl p-4 lg:block"><div className="mb-8 text-xl font-bold">ClipForge AI</div><nav className="space-y-2">{items.map((item) => <Link key={item} href={href[item]} className="block rounded-2xl px-4 py-3 text-sm text-white/70 transition hover:bg-white/10 hover:text-white">{item}</Link>)}</nav></aside>;
++}
+diff --git a/apps/web/components/upload-dropzone.tsx b/apps/web/components/upload-dropzone.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..bcadf80cf3d09d79e368eb8ba959e638882d9c31
+--- /dev/null
++++ b/apps/web/components/upload-dropzone.tsx
+@@ -0,0 +1,22 @@
++'use client';
++import { useState } from 'react';
++import { createUploadIntent } from '@/lib/api';
++export function UploadDropzone() {
++  const [progress, setProgress] = useState(0);
++  const [message, setMessage] = useState('Drag & drop a video up to 5 GB');
++  async function upload(file: File) {
++    setMessage(`Preparing ${file.name}`);
++    const intent = await createUploadIntent(file);
++    await new Promise<void>((resolve, reject) => {
++      const xhr = new XMLHttpRequest();
++      xhr.upload.onprogress = (event) => setProgress(Math.round((event.loaded / event.total) * 100));
++      xhr.onload = () => resolve();
++      xhr.onerror = () => reject(new Error('Upload failed'));
++      xhr.open('PUT', intent.upload_url);
++      xhr.setRequestHeader('content-type', file.type);
++      xhr.send(file);
++    });
++    setMessage('Uploaded. AI processing can now be queued.');
++  }
++  return <label className="glass flex min-h-64 cursor-pointer flex-col items-center justify-center rounded-3xl p-8 text-center"><input type="file" accept="video/*" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} /><div className="text-2xl font-semibold">Upload long-form video</div><p className="mt-3 text-white/60">{message}</p><div className="mt-6 h-2 w-full max-w-md rounded-full bg-white/10"><div className="h-2 rounded-full bg-violet-500" style={{ width: `${progress}%` }} /></div></label>;
++}
+diff --git a/apps/web/lib/__init__.py b/apps/web/lib/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/web/lib/api.ts b/apps/web/lib/api.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..afaa7a5b05c0dd222de798259d141ba4f3223273
+--- /dev/null
++++ b/apps/web/lib/api.ts
+@@ -0,0 +1,11 @@
++const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
++export async function getVideos() {
++  const res = await fetch(`${API_URL}/api/v1/videos`, { cache: 'no-store' });
++  if (!res.ok) return [];
++  return res.json();
++}
++export async function createUploadIntent(file: File) {
++  const res = await fetch(`${API_URL}/api/v1/uploads/intent`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ filename: file.name, content_type: file.type, size_bytes: file.size }) });
++  if (!res.ok) throw new Error('Unable to create upload');
++  return res.json();
++}
+diff --git a/apps/web/next-env.d.ts b/apps/web/next-env.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6080addc2d9595896fa4440b16cf51a41bfcfef8
+--- /dev/null
++++ b/apps/web/next-env.d.ts
+@@ -0,0 +1,2 @@
++/// <reference types="next" />
++/// <reference types="next/image-types/global" />
+diff --git a/apps/web/next.config.ts b/apps/web/next.config.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a327e2517dd29743e49ff18a3283072e4ad6cd40
+--- /dev/null
++++ b/apps/web/next.config.ts
+@@ -0,0 +1,3 @@
++import type { NextConfig } from 'next';
++const nextConfig: NextConfig = { output: 'standalone' };
++export default nextConfig;
+diff --git a/apps/web/package.json b/apps/web/package.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..7d2a9f0ee7a7767064607fe8f05e2e116f44ca28
+--- /dev/null
++++ b/apps/web/package.json
+@@ -0,0 +1 @@
++{"scripts":{"dev":"next dev","build":"next build","start":"next start","lint":"next lint"},"dependencies":{"@types/node":"22.10.5","@types/react":"19.0.2","@types/react-dom":"19.0.2","framer-motion":"11.15.0","lucide-react":"0.468.0","next":"15.1.3","react":"19.0.0","react-dom":"19.0.0","typescript":"5.7.2"},"devDependencies":{"autoprefixer":"10.4.20","postcss":"8.4.49","tailwindcss":"3.4.17"}}
+diff --git a/apps/web/postcss.config.js b/apps/web/postcss.config.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..cce4985fbec1db93c0e8e5479b3bb64e349352a3
+--- /dev/null
++++ b/apps/web/postcss.config.js
+@@ -0,0 +1 @@
++module.exports = { plugins: { tailwindcss: {}, autoprefixer: {} } };
+diff --git a/apps/web/tailwind.config.ts b/apps/web/tailwind.config.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..74587dbf08d6ab62907c43fe069a6c30bfbda1c1
+--- /dev/null
++++ b/apps/web/tailwind.config.ts
+@@ -0,0 +1,2 @@
++import type { Config } from 'tailwindcss';
++export default { content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'], theme: { extend: { colors: { forge: { bg: '#05070d', card: '#0c111d', accent: '#8b5cf6' } } } }, plugins: [] } satisfies Config;
+diff --git a/apps/web/tsconfig.json b/apps/web/tsconfig.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..d21867bfd9dfd11b5bc8210419e99aba1b33c809
+--- /dev/null
++++ b/apps/web/tsconfig.json
+@@ -0,0 +1 @@
++{"compilerOptions":{"target":"ES2022","lib":["dom","dom.iterable","es2022"],"allowJs":false,"skipLibCheck":true,"strict":true,"noEmit":true,"esModuleInterop":true,"module":"esnext","moduleResolution":"bundler","resolveJsonModule":true,"isolatedModules":true,"jsx":"preserve","incremental":true,"plugins":[{"name":"next"}],"paths":{"@/*":["./*"]}},"include":["next-env.d.ts","**/*.ts","**/*.tsx",".next/types/**/*.ts"],"exclude":["node_modules"]}
+diff --git a/apps/worker/Dockerfile b/apps/worker/Dockerfile
+new file mode 100644
+index 0000000000000000000000000000000000000000..55814222eb3029c2fb2696a02b757a91c120b1d5
+--- /dev/null
++++ b/apps/worker/Dockerfile
+@@ -0,0 +1,8 @@
++FROM python:3.12-slim
++WORKDIR /app
++RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libgl1 && rm -rf /var/lib/apt/lists/*
++COPY apps/api/requirements.txt /app/requirements.txt
++RUN pip install --no-cache-dir -r requirements.txt
++COPY apps/api/app /app/app
++COPY apps/worker/pipeline /app/pipeline
++CMD ["celery", "-A", "app.services.tasks.celery_app", "worker", "--loglevel=INFO"]
+diff --git a/apps/worker/__init__.py b/apps/worker/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/apps/worker/pipeline/README.md b/apps/worker/pipeline/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c659a7953b5cc71547c3a9eff35e7afe0d445d18
+--- /dev/null
++++ b/apps/worker/pipeline/README.md
+@@ -0,0 +1,3 @@
++# ClipForge pipeline
++
++Stages: upload ingestion, FFmpeg audio extraction, Whisper transcription, Pyannote diarization, transcript segmentation, multimodal engagement scoring, face tracking and 9:16 crop planning, caption rendering, lightweight enhancement, export, and S3 persistence.
+diff --git a/apps/worker/pipeline/__init__.py b/apps/worker/pipeline/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..3dfc92b6061f42f3faa45c5c552b01837db531b0
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,43 @@
++services:
++  postgres:
++    image: postgres:16-alpine
++    environment:
++      POSTGRES_USER: clipforge
++      POSTGRES_PASSWORD: clipforge
++      POSTGRES_DB: clipforge
++    ports: ["5432:5432"]
++    volumes: ["postgres_data:/var/lib/postgresql/data"]
++  redis:
++    image: redis:7-alpine
++    ports: ["6379:6379"]
++  minio:
++    image: minio/minio:latest
++    command: server /data --console-address ":9001"
++    environment:
++      MINIO_ROOT_USER: minioadmin
++      MINIO_ROOT_PASSWORD: minioadmin
++    ports: ["9000:9000", "9001:9001"]
++    volumes: ["minio_data:/data"]
++  api:
++    build:
++      context: .
++      dockerfile: apps/api/Dockerfile
++    env_file: .env
++    ports: ["8000:8000"]
++    depends_on: [postgres, redis, minio]
++  worker:
++    build:
++      context: .
++      dockerfile: apps/worker/Dockerfile
++    env_file: .env
++    depends_on: [api, redis, postgres, minio]
++  web:
++    build:
++      context: .
++      dockerfile: apps/web/Dockerfile
++    env_file: .env
++    ports: ["3000:3000"]
++    depends_on: [api]
++volumes:
++  postgres_data:
++  minio_data:
+diff --git a/infra/migrations/001_init.sql b/infra/migrations/001_init.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..d06b53aba7a135970ce9fd0e779f607b0457307b
+--- /dev/null
++++ b/infra/migrations/001_init.sql
+@@ -0,0 +1,24 @@
++CREATE TABLE IF NOT EXISTS videos (
++  id UUID PRIMARY KEY,
++  owner_id VARCHAR(128) NOT NULL,
++  title VARCHAR(255) NOT NULL,
++  source_key VARCHAR(512) NOT NULL,
++  duration_seconds INTEGER,
++  status VARCHAR(32) NOT NULL,
++  transcript TEXT,
++  analysis JSONB,
++  created_at TIMESTAMP NOT NULL DEFAULT now()
++);
++
++CREATE TABLE IF NOT EXISTS clips (
++  id UUID PRIMARY KEY,
++  video_id UUID NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
++  title VARCHAR(255) NOT NULL,
++  topic VARCHAR(160) NOT NULL,
++  score DOUBLE PRECISION NOT NULL,
++  duration_seconds INTEGER NOT NULL,
++  output_key VARCHAR(512),
++  captions JSONB,
++  hashtags JSONB,
++  description TEXT
++);
+diff --git a/packages/shared/contracts.ts b/packages/shared/contracts.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d9737e1cef8edbcbc4a47dc320ca28705cb7b301
+--- /dev/null
++++ b/packages/shared/contracts.ts
+@@ -0,0 +1,3 @@
++export const clipDurations = [15, 30, 45, 60] as const;
++export const captionPresets = ['TikTok', 'Alex Hormozi', 'MrBeast', 'Minimal', 'Podcast', 'Modern'] as const;
++export const exportProfiles = [{ resolution: '1080x1920', fps: 30, codec: 'H264' }, { resolution: '720x1280', fps: 60, codec: 'HEVC' }] as const;
+diff --git a/tests/test_pipeline.py b/tests/test_pipeline.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fbe75719a031f7ebf9f551a54839c551e1935d26
+--- /dev/null
++++ b/tests/test_pipeline.py
+@@ -0,0 +1,6 @@
++from apps.api.app.services.ai_pipeline import analyze_video
++
++def test_pipeline_returns_ranked_clips():
++    result = analyze_video('uploads/demo.mp4')
++    assert len(result['clips']) == 4
++    assert result['clips'][0]['score'] > result['clips'][-1]['score']
 
